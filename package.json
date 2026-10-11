@@ -3,24 +3,42 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "tsx server.ts",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "cross-env NODE_ENV=production tsx server.ts",
+    "lint": "eslint",
+    "test:security": "tsx scripts/test-admin-auth-security.ts",
+    "test:foundation": "tsx scripts/verify-foundation.ts",
+    "test:registration": "tsx scripts/test-registration-lobby.ts",
+    "test:quiz": "tsx scripts/test-quiz-engine.ts",
+    "test:powerups": "tsx scripts/test-powerups.ts",
+    "test:clincher": "tsx scripts/test-clincher-leaderboard.ts",
+    "test:all": "tsx scripts/verify-foundation.ts && tsx scripts/test-registration-lobby.ts && tsx scripts/test-quiz-engine.ts && tsx scripts/test-powerups.ts && tsx scripts/test-clincher-leaderboard.ts && tsx scripts/test-admin-auth-security.ts",
+    "admin:reset": "tsx scripts/reset-admin.ts"
   },
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.54.0",
     "next": "16.4.0",
+    "qrcode.react": "^4.2.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "socket.io": "^4.8.4",
+    "socket.io-client": "^4.8.4",
+    "tailwind-merge": "^3.7.0"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }
