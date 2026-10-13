@@ -401,6 +401,7 @@ export interface ClientToServerEvents {
   "quiz:get_questions": (payload: { sessionId?: string }, callback: (questions: QuizQuestion[]) => void) => void;
   "quiz:save_question": (payload: { question: Partial<QuizQuestion> }, callback: (result: { success: boolean; question?: QuizQuestion; error?: string }) => void) => void;
   "quiz:delete_question": (payload: { questionId: string }, callback: (success: boolean) => void) => void;
+  "quiz:clear_questions": (payload: Record<string, never>, callback?: (success: boolean) => void) => void;
   "quiz:reorder_questions": (payload: { questionIds: string[] }, callback?: (success: boolean) => void) => void;
   "quiz:activate_surprise": (payload: { sessionId: string; questionId?: string }, callback?: (result: { success: boolean; error?: string }) => void) => void;
   "quiz:end_question": (payload: { sessionId: string }, callback?: (result: { success: boolean; error?: string }) => void) => void;

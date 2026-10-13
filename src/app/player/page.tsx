@@ -26,6 +26,7 @@ import {
   Flame,
 } from "lucide-react";
 import { LeaderboardPodium } from "@/components/leaderboard-podium";
+import { CountdownTimer } from "@/components/countdown-timer";
 import { useSocket } from "@/hooks/use-socket";
 import { useIsMounted } from "@/hooks/use-is-mounted";
 import { soundEffects } from "@/lib/sound-effects";
@@ -86,6 +87,7 @@ function PlayerContent() {
   const reconnectCheckedRef = useRef(false);
   const [buzzerTriggered, setBuzzerTriggered] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isQuestionExpired, setIsQuestionExpired] = useState(false);
 
   // Power-Up Local States
   const [riddleInput, setRiddleInput] = useState("");
@@ -117,6 +119,7 @@ function PlayerContent() {
     clincherState,
     lastClincherResult,
     clincherSubmission,
+    serverTimeOffset,
     submitClincherAnswerAction,
     fetchLeaderboardAction,
     sendPing,
@@ -145,30 +148,7 @@ function PlayerContent() {
   const displayTeam =
     (registeredTeam && lobbyData?.teams.find((t) => t.id === registeredTeam.id)) || registeredTeam;
 
-  // Synchronized Quiz Countdown ticker
-  const [now, setNow] = useState<number>(0);
 
-  useEffect(() => {
-    if (!activeQuiz) return;
-    const interval = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(interval);
-  }, [activeQuiz]);
-
-  const timeLeft = activeQuiz && now > 0 ? Math.max(0, Math.ceil((activeQuiz.deadline - now) / 1000)) : activeQuiz?.timeLimit ?? null;
-
-  // Clincher Countdown ticker
-  const [clincherNow, setClincherNow] = useState<number>(0);
-
-  useEffect(() => {
-    if (!clincherState) return;
-    const interval = setInterval(() => setClincherNow(Date.now()), 250);
-    return () => clearInterval(interval);
-  }, [clincherState]);
-
-  const clincherTimeLeft =
-    clincherState && clincherNow > 0
-      ? Math.max(0, Math.ceil((clincherState.deadline - clincherNow) / 1000))
-      : clincherState?.timeLimit ?? null;
 
   useEffect(() => {
     if (targetSessionId) {
@@ -178,6 +158,9 @@ function PlayerContent() {
 
   const handleSubmitClincher = (choice: QuizChoice) => {
     if (!clincherState || !displayTeam || !authToken) return;
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      navigator.vibrate([20, 40]);
+    }
     setSubmitError(null);
     submitClincherAnswerAction(
       targetSessionId || "",
@@ -245,6 +228,10 @@ function PlayerContent() {
       prevPowerUpTypeRef.current = myPowerUp.powerUpType;
     }
   }, [myPowerUp]);
+
+  useEffect(() => {
+    setIsQuestionExpired(false);
+  }, [activeQuiz?.id]);
 
   // Handle new team registration
   const handleRegister = (e: React.FormEvent) => {
@@ -348,7 +335,7 @@ function PlayerContent() {
   // Submit Answer Action
   const handleSubmitChoice = (choice: QuizChoice) => {
     if (!registeredTeam || !authToken || !activeQuiz || !targetSessionId) return;
-    if (quizSubmission.hasSubmitted) return;
+    if (quizSubmission.hasSubmitted || isQuestionExpired) return;
 
     if (teamPowerUpStatus?.isLockedDown) {
       setSubmitError("Your team is locked down by a Lockdown Spell for this question!");
@@ -361,6 +348,9 @@ function PlayerContent() {
     }
 
     setSubmitError(null);
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+      navigator.vibrate([15, 30]);
+    }
     submitQuizAnswer(
       targetSessionId,
       registeredTeam.id,
@@ -558,10 +548,13 @@ function PlayerContent() {
                     <Flame className="w-3.5 h-3.5 fill-white" />
                     Clincher &bull; Round {clincherState.roundNumber}
                   </span>
-                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-950 border border-rose-500 font-mono text-rose-400 font-black text-sm">
-                    <Clock className="w-4 h-4 text-rose-500 animate-spin" />
-                    <span>{clincherTimeLeft ?? clincherState.timeLimit}s</span>
-                  </div>
+                  <CountdownTimer
+                    deadline={clincherState.deadline}
+                    timeLimit={clincherState.timeLimit}
+                    serverTimeOffset={serverTimeOffset}
+                    variant="rose"
+                    showLabel={false}
+                  />
                 </div>
 
                 {displayTeam && clincherState.contendingTeamIds.includes(displayTeam.id) ? (
@@ -688,10 +681,14 @@ function PlayerContent() {
                     Surprise Quiz
                   </span>
 
-                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-950 border border-amber-500/40 font-mono text-amber-400 font-black text-sm">
-                    <Clock className="w-4 h-4 text-amber-500 animate-spin" />
-                    <span>{timeLeft ?? activeQuiz.timeLimit}s Left</span>
-                  </div>
+                  <CountdownTimer
+                    deadline={activeQuiz.deadline}
+                    timeLimit={activeQuiz.timeLimit}
+                    serverTimeOffset={serverTimeOffset}
+                    variant="amber"
+                    showLabel={true}
+                    onExpire={() => setIsQuestionExpired(true)}
+                  />
                 </div>
 
                 {/* Question Text */}
@@ -775,7 +772,7 @@ function PlayerContent() {
                         const isLocked = quizSubmission.hasSubmitted;
                         const isRevealed = revealedAnswer === choice;
                         const optColor = OPTION_COLORS[choice];
-                        const isDisabled = isLocked || (timeLeft !== null && timeLeft <= 0) || teamPowerUpStatus?.isLockedDown;
+                        const isDisabled = isLocked || isQuestionExpired || teamPowerUpStatus?.isLockedDown;
 
                         return (
                           <button

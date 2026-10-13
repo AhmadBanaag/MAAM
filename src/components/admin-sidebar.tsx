@@ -82,7 +82,7 @@ export function AdminSidebar() {
     activeQuiz,
     isGameEnded,
     clincherState,
-  } = useSocket("admin", "AdminNav");
+  } = useSocket();
 
   // Close mobile drawer on route change
   const [prevPath, setPrevPath] = useState(pathname);

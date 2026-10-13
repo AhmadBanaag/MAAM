@@ -64,7 +64,7 @@ export default function AdminDashboardPage() {
     startClincherRoundAction,
     shufflePowerUpsAction,
     fetchAllPowerUpsAction,
-  } = useSocket("admin", "AdminMainDashboard");
+  } = useSocket("admin", "Admin");
 
   // State
   const [logs, setLogs] = useState<ActivityLogItem[]>([]);

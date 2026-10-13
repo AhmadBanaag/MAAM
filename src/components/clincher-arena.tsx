@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Flame, Clock, Trophy, ShieldAlert, ArrowRight } from "lucide-react";
+import React from "react";
+import { Flame, Trophy, ShieldAlert, ArrowRight } from "lucide-react";
+import { CountdownTimer } from "@/components/countdown-timer";
 import type {
   ClincherStatePayload,
   ClincherRoundResult,
@@ -13,6 +14,7 @@ interface ClincherArenaProps {
   clincherState: ClincherStatePayload | null;
   lastClincherResult: ClincherRoundResult | null;
   leaderboard: FinalLeaderboardPayload | null;
+  serverTimeOffset?: number;
   onAdvanceNextQuestion?: () => void;
   onEndGame?: () => void;
   isAdmin?: boolean;
@@ -29,24 +31,11 @@ export function ClincherArena({
   clincherState,
   lastClincherResult,
   leaderboard,
+  serverTimeOffset = 0,
   onAdvanceNextQuestion,
   onEndGame,
   isAdmin = false,
 }: ClincherArenaProps) {
-  // Synchronized countdown ticker
-  const [now, setNow] = useState<number>(0);
-
-  useEffect(() => {
-    if (!clincherState) return;
-    const interval = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(interval);
-  }, [clincherState]);
-
-  const timeLeft =
-    clincherState && now > 0
-      ? Math.max(0, Math.ceil((clincherState.deadline - now) / 1000))
-      : clincherState?.timeLimit ?? null;
-
   // Active question view
   if (clincherState) {
     const question = clincherState.question;
@@ -75,13 +64,17 @@ export function ClincherArena({
 
           <div className="flex items-center gap-4 flex-shrink-0">
             <div className="px-6 py-3.5 rounded-2xl bg-slate-950 border-2 border-rose-500 text-center shadow-lg shadow-rose-600/20">
-              <div className="text-[10px] text-rose-300 font-bold uppercase tracking-wider">
+              <div className="text-[10px] text-rose-300 font-bold uppercase tracking-wider mb-1">
                 Clincher Countdown
               </div>
-              <div className="text-3xl md:text-4xl font-black font-mono text-rose-400 flex items-center justify-center gap-1.5">
-                <Clock className="w-7 h-7 text-rose-500 animate-spin" />
-                <span>{timeLeft ?? clincherState.timeLimit}s</span>
-              </div>
+              <CountdownTimer
+                deadline={clincherState.deadline}
+                timeLimit={clincherState.timeLimit}
+                serverTimeOffset={serverTimeOffset}
+                variant="rose"
+                showLabel={false}
+                className="!text-3xl md:!text-4xl !py-1 !px-2 justify-center !border-0 !bg-transparent"
+              />
             </div>
           </div>
         </div>

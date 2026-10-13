@@ -24,7 +24,7 @@ export default function AdminSettingsPage() {
     currentSession,
     lobbyData,
     toggleRegistration,
-  } = useSocket("admin", "AdminSettingsView");
+  } = useSocket("admin", "Admin");
 
   const session = lobbyData?.session || currentSession;
   const isRegistrationOpen = session ? session.is_registration_open === 1 && session.status !== "registration_closed" : true;

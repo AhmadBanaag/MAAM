@@ -9,6 +9,18 @@ class SoundEffectsManager {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("cqb_sound_effects");
       this.isEnabled = saved !== "false";
+
+      const unlockAudio = () => {
+        if (!this.ctx) {
+          this.initCtx();
+        } else if (this.ctx.state === "suspended") {
+          this.ctx.resume();
+        }
+        window.removeEventListener("pointerdown", unlockAudio);
+        window.removeEventListener("keydown", unlockAudio);
+      };
+      window.addEventListener("pointerdown", unlockAudio, { passive: true });
+      window.addEventListener("keydown", unlockAudio, { passive: true });
     }
   }
 

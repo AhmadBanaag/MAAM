@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { LeaderboardPodium } from "@/components/leaderboard-podium";
 import { ClincherArena } from "@/components/clincher-arena";
+import { CountdownTimer } from "@/components/countdown-timer";
 import { useSocket } from "@/hooks/use-socket";
 import { ServerStatusBadge } from "@/components/server-status-badge";
 import { NetworkInfoCard } from "@/components/network-info-card";
@@ -59,21 +60,13 @@ export default function HomePage() {
     isGameEnded,
     clincherState,
     lastClincherResult,
+    serverTimeOffset,
     fetchLeaderboardAction,
   } = useSocket("spectator");
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
   const [viewMode, setViewMode] = useState<"roster" | "leaderboard">("roster");
 
-  // Synchronized Quiz Countdown ticker
-  const [now, setNow] = useState<number>(0);
 
-  useEffect(() => {
-    if (!activeQuiz) return;
-    const interval = setInterval(() => setNow(Date.now()), 250);
-    return () => clearInterval(interval);
-  }, [activeQuiz]);
-
-  const timeLeft = activeQuiz && now > 0 ? Math.max(0, Math.ceil((activeQuiz.deadline - now) / 1000)) : activeQuiz?.timeLimit ?? null;
 
   useEffect(() => {
     const sId = lobbyData?.session.id || currentSession?.id;
@@ -141,6 +134,7 @@ export default function HomePage() {
             clincherState={clincherState}
             lastClincherResult={lastClincherResult}
             leaderboard={leaderboard}
+            serverTimeOffset={serverTimeOffset}
           />
         )}
 
@@ -219,13 +213,17 @@ export default function HomePage() {
 
               <div className="flex items-center gap-4 flex-shrink-0">
                 <div className="px-5 py-3 rounded-2xl bg-slate-950 border border-amber-500/40 text-center">
-                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1">
                     Countdown
                   </div>
-                  <div className="text-3xl font-black font-mono text-amber-400 flex items-center justify-center gap-1.5">
-                    <Clock className="w-6 h-6 text-amber-500" />
-                    <span>{timeLeft ?? activeQuiz.timeLimit}s</span>
-                  </div>
+                  <CountdownTimer
+                    deadline={activeQuiz.deadline}
+                    timeLimit={activeQuiz.timeLimit}
+                    serverTimeOffset={serverTimeOffset}
+                    variant="amber"
+                    showLabel={false}
+                    className="!text-3xl !py-1.5 !px-3 justify-center !border-0 !bg-transparent"
+                  />
                 </div>
               </div>
             </div>

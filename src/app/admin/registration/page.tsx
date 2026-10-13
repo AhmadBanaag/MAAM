@@ -34,7 +34,7 @@ export default function AdminRegistrationPage() {
     lobbyData,
     serverIp,
     toggleRegistration,
-  } = useSocket("admin", "AdminQrRegistrationView");
+  } = useSocket("admin", "Admin");
 
   const [copied, setCopied] = useState(false);
   const [selectedIp, setSelectedIp] = useState<string>("");

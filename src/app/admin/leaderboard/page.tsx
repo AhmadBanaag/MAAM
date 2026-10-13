@@ -26,7 +26,7 @@ export default function AdminLeaderboardPage() {
     lastClincherResult,
     startClincherRoundAction,
     endClincherRoundAction,
-  } = useSocket("admin", "AdminLeaderboardView");
+  } = useSocket("admin", "Admin");
 
   const [isPresentationMode, setIsPresentationMode] = useState(false);
   const [isClincherModalOpen, setIsClincherModalOpen] = useState(false);

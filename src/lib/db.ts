@@ -270,8 +270,13 @@ export function getDb(): Database.Database {
   const dbPath = path.join(dataDir, "quiz-battle.db");
   const db = new Database(dbPath);
 
-  // Enable WAL mode for high concurrency
+  // High-performance SQLite engine tuning
   db.pragma("journal_mode = WAL");
+  db.pragma("synchronous = NORMAL");
+  db.pragma("cache_size = -64000"); // 64MB memory page cache
+  db.pragma("temp_store = MEMORY");
+  db.pragma("mmap_size = 268435456"); // 256MB memory map
+  db.pragma("busy_timeout = 5000");
 
   // Check if legacy table structure needs upgrade
   try {
@@ -308,6 +313,8 @@ export function getDb(): Database.Database {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE INDEX IF NOT EXISTS idx_sessions_status ON game_sessions(status, created_at);
+
     CREATE TABLE IF NOT EXISTS teams (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -327,6 +334,7 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_teams_session ON teams(session_id);
     CREATE INDEX IF NOT EXISTS idx_teams_token ON teams(token);
+    CREATE INDEX IF NOT EXISTS idx_teams_session_token ON teams(session_id, token);
 
     CREATE TABLE IF NOT EXISTS questions (
       id TEXT PRIMARY KEY,
@@ -344,6 +352,7 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_questions_session ON questions(session_id);
+    CREATE INDEX IF NOT EXISTS idx_questions_order ON questions(session_id, order_num, created_at);
 
     CREATE TABLE IF NOT EXISTS submissions (
       id TEXT PRIMARY KEY,
@@ -364,6 +373,7 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_submissions_session_q ON submissions(session_id, question_id);
     CREATE INDEX IF NOT EXISTS idx_submissions_team ON submissions(team_id);
+    CREATE INDEX IF NOT EXISTS idx_submissions_lookup ON submissions(session_id, question_id, team_id);
 
     CREATE TABLE IF NOT EXISTS team_powerups (
       id TEXT PRIMARY KEY,
@@ -381,6 +391,7 @@ export function getDb(): Database.Database {
     );
 
     CREATE INDEX IF NOT EXISTS idx_team_powerups_session ON team_powerups(session_id);
+    CREATE INDEX IF NOT EXISTS idx_team_powerups_lookup ON team_powerups(session_id, team_id, is_used);
 
     CREATE TABLE IF NOT EXISTS riddles (
       id TEXT PRIMARY KEY,
@@ -423,6 +434,8 @@ export function getDb(): Database.Database {
       UNIQUE(session_id, question_id, team_id)
     );
 
+    CREATE INDEX IF NOT EXISTS idx_team_riddle_lookup ON team_riddle_status(session_id, question_id, team_id);
+
     CREATE TABLE IF NOT EXISTS clincher_rounds (
       id TEXT PRIMARY KEY,
       session_id TEXT NOT NULL,
@@ -457,6 +470,8 @@ export function getDb(): Database.Database {
       FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE,
       UNIQUE(clincher_round_id, team_id)
     );
+
+    CREATE INDEX IF NOT EXISTS idx_clincher_sub_round ON clincher_submissions(session_id, clincher_round_id, team_id);
 
     CREATE TABLE IF NOT EXISTS admin_users (
       id TEXT PRIMARY KEY,
@@ -529,36 +544,11 @@ export function getDb(): Database.Database {
     console.error("Migration error check:", err);
   }
 
-  // Seed default questions if question bank is empty
+  // Initialize system_config without auto-seeding dummy questions
   try {
-    const qCount = (db.prepare("SELECT COUNT(*) as count FROM questions").get() as { count: number }).count;
-    if (qCount === 0) {
-      const insertQ = db.prepare(`
-        INSERT INTO questions (
-          id, session_id, question_text, option_a, option_b, option_c, option_d,
-          correct_answer, time_limit, points, order_num
-        ) VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      DEFAULT_QUESTIONS.forEach((q, index) => {
-        const qId = `q_seed_${index + 1}`;
-        insertQ.run(
-          qId,
-          q.question_text,
-          q.option_a,
-          q.option_b,
-          q.option_c,
-          q.option_d,
-          q.correct_answer,
-          q.time_limit,
-          q.points,
-          index + 1
-        );
-      });
-      console.log(`[DB] Seeded ${DEFAULT_QUESTIONS.length} default classroom quiz questions.`);
-    }
+    db.prepare("INSERT OR IGNORE INTO system_config (key, value) VALUES ('questions_initialized', 'true')").run();
   } catch (err) {
-    console.error("Seeding questions error:", err);
+    console.error("Initializing system_config questions error:", err);
   }
 
   // Seed default riddles if riddle bank is empty
@@ -594,6 +584,7 @@ export function getDb(): Database.Database {
 }
 
 export function closeDb(): void {
+  invalidateQuestionCache();
   if (dbInstance) {
     dbInstance.close();
     dbInstance = null;
@@ -850,26 +841,44 @@ function toLobbyInfo(t: TeamRecord): TeamLobbyInfo {
   };
 }
 
-// ----------------- Quiz Questions Queries -----------------
+// ----------------- Quiz Questions Queries & In-Memory Cache -----------------
+
+const questionCache = new Map<string, QuizQuestion>();
+let allQuestionsCache: { key: string; questions: QuizQuestion[] } | null = null;
+
+export function invalidateQuestionCache(): void {
+  questionCache.clear();
+  allQuestionsCache = null;
+}
 
 export function getQuestions(sessionId?: string): QuizQuestion[] {
-  const db = getDb();
-  let rows: QuestionRecord[];
-  if (sessionId) {
-    rows = db.prepare("SELECT * FROM questions WHERE session_id = ? OR session_id IS NULL ORDER BY order_num ASC, created_at ASC").all(sessionId) as QuestionRecord[];
-  } else {
-    rows = db.prepare("SELECT * FROM questions ORDER BY order_num ASC, created_at ASC").all() as QuestionRecord[];
+  const cacheKey = sessionId || "__all__";
+  if (allQuestionsCache && allQuestionsCache.key === cacheKey) {
+    return allQuestionsCache.questions;
   }
-  return rows.map(toQuizQuestion);
+  const db = getDb();
+  // Return all questions in the repository sorted by order_num, created_at
+  const rows = db.prepare("SELECT * FROM questions ORDER BY order_num ASC, created_at ASC").all() as QuestionRecord[];
+  const result = rows.map(toQuizQuestion);
+  result.forEach((q) => questionCache.set(q.id, q));
+  allQuestionsCache = { key: cacheKey, questions: result };
+  return result;
 }
 
 export function getQuestionById(id: string): QuizQuestion | null {
+  if (questionCache.has(id)) {
+    return questionCache.get(id)!;
+  }
   const db = getDb();
   const row = db.prepare("SELECT * FROM questions WHERE id = ?").get(id) as QuestionRecord | undefined;
-  return row ? toQuizQuestion(row) : null;
+  if (!row) return null;
+  const q = toQuizQuestion(row);
+  questionCache.set(id, q);
+  return q;
 }
 
 export function saveQuestion(q: Partial<QuizQuestion>): QuizQuestion {
+  invalidateQuestionCache();
   const db = getDb();
   const id = q.id || `q_${crypto.randomBytes(4).toString("hex")}`;
   const questionText = q.questionText?.trim() || "Untitled Question";
@@ -915,12 +924,14 @@ export function saveQuestion(q: Partial<QuizQuestion>): QuizQuestion {
 }
 
 export function deleteQuestion(id: string): boolean {
+  invalidateQuestionCache();
   const db = getDb();
   const res = db.prepare("DELETE FROM questions WHERE id = ?").run(id);
   return res.changes > 0;
 }
 
 export function reorderQuestions(orderIds: string[]): boolean {
+  invalidateQuestionCache();
   const db = getDb();
   const stmt = db.prepare("UPDATE questions SET order_num = ? WHERE id = ?");
   db.transaction(() => {
@@ -928,6 +939,19 @@ export function reorderQuestions(orderIds: string[]): boolean {
       stmt.run(idx + 1, id);
     });
   })();
+  return true;
+}
+
+export function clearAllQuestions(): boolean {
+  const db = getDb();
+  invalidateQuestionCache();
+  db.prepare("DELETE FROM submissions").run();
+  db.prepare("DELETE FROM question_powerup_effects").run();
+  db.prepare("DELETE FROM team_riddle_status").run();
+  db.prepare("DELETE FROM clincher_submissions").run();
+  db.prepare("DELETE FROM clincher_rounds").run();
+  db.prepare("DELETE FROM questions").run();
+  db.prepare("UPDATE game_sessions SET current_question_id = NULL, quiz_state = 'idle'").run();
   return true;
 }
 

@@ -37,7 +37,7 @@ export default function AdminTeamsPage() {
     shufflePowerUpsAction,
     fetchAllPowerUpsAction,
     adminResolveStuckAction,
-  } = useSocket("admin", "AdminTeamOrganizationView");
+  } = useSocket("admin", "Admin");
 
   const activeSessionId = lobbyData?.session.id || currentSession?.id;
 

@@ -33,6 +33,7 @@ import {
   getQuestionById,
   saveQuestion,
   deleteQuestion,
+  clearAllQuestions,
   reorderQuestions,
   setSessionActiveQuiz,
   recordSubmission,
@@ -474,6 +475,16 @@ async function startServer() {
         const client = connectedClients.get(socket.id);
         if (!client) return;
 
+        // Deduplicate: If client is already registered with identical role, name, team, and session, skip
+        const isSameRole = client.role === payload.role;
+        const isSameName = client.name === payload.name;
+        const isSameTeam = client.teamId === payload.teamId;
+        const isSameSession = client.sessionId === payload.sessionId;
+
+        if (isSameRole && isSameName && isSameTeam && isSameSession) {
+          return;
+        }
+
         if (payload.role === "admin") {
           // Never trust client claim; verify server session cookie
           if (isAuthorizedAdminSocket(socket)) {
@@ -511,6 +522,82 @@ async function startServer() {
         }
 
         io.emit("server:clients_updated", getClientCounts());
+
+        // Proactively rehydrate session state for newly registered or navigating client
+        const activeSession = (payload.sessionId && getSessionById(payload.sessionId)) || getActiveSession();
+        if (activeSession) {
+          socket.emit("server:connected", {
+            socketId: socket.id,
+            serverTimestamp: Date.now(),
+            serverIp: primaryIp,
+            activeClients: getClientCounts(),
+            currentSession: activeSession,
+          });
+
+          const lobbyData = getLobbyPayload(activeSession.id);
+          if (lobbyData) {
+            socket.emit("lobby:updated", lobbyData);
+          }
+
+          // If a quiz is currently running, sync active question
+          const activeQuiz = activeQuizMap.get(activeSession.id);
+          if (activeQuiz) {
+            const q = getQuestionById(activeQuiz.questionId);
+            if (q) {
+              const questions = getQuestions(activeSession.id);
+              const qIndex = questions.findIndex((item) => item.id === q.id);
+              const clientQ = createSanitizedClientQuestion(
+                q,
+                activeSession.id,
+                activeQuiz.startedAt,
+                activeQuiz.deadline,
+                qIndex >= 0 ? qIndex + 1 : 1,
+                questions.length,
+                payload.role === "player" ? payload.teamId : undefined
+              );
+              socket.emit("quiz:started", clientQ);
+            }
+          }
+
+          // If clincher round is running, sync clincher state
+          const activeClincher = activeClincherMap.get(activeSession.id);
+          if (activeClincher) {
+            const clincherQ = getQuestionById(activeClincher.questionId);
+            if (clincherQ) {
+              const clientClincherQ = createClientQuestion(
+                clincherQ,
+                activeSession.id,
+                activeClincher.startedAt,
+                activeClincher.deadline,
+                activeClincher.roundNumber,
+                activeClincher.roundNumber
+              );
+              socket.emit("clincher:started", {
+                roundNumber: activeClincher.roundNumber,
+                question: clientClincherQ,
+                deadline: activeClincher.deadline,
+                startedAt: activeClincher.startedAt,
+                timeLimit: activeClincher.timeLimit,
+                contendingTeamIds: activeClincher.contendingTeamIds,
+                allowPowerUps: activeClincher.allowPowerUps,
+              });
+            }
+          }
+
+          // Sync current leaderboard
+          const lb = getLeaderboard(activeSession.id);
+          if (lb) {
+            socket.emit("leaderboard:updated", lb);
+          }
+
+          // If authenticated admin, also sync full power-ups table and question bank
+          if (client.role === "admin") {
+            const allPus = getAllTeamPowerUps(activeSession.id);
+            if (allPus.length > 0) {
+              socket.emit("powerup:all_assigned", allPus);
+            }
+          }
+        }
       });
 
       // Fetch lobby state for a session
@@ -867,6 +954,19 @@ async function startServer() {
 
         const success = deleteQuestion(payload.questionId);
         console.log(`[Quiz] Deleted question ${payload.questionId}: ${success}`);
+        if (callback) callback(success);
+      });
+
+      // Admin: Clear all questions in question bank (Strictly authenticated)
+      socket.on("quiz:clear_questions", (_payload, callback) => {
+        if (!isAuthorizedAdminSocket(socket)) {
+          console.warn(`[Security] Unauthorized attempt to invoke quiz:clear_questions from socket ${socket.id}`);
+          if (callback) callback(false);
+          return;
+        }
+
+        const success = clearAllQuestions();
+        console.log(`[Quiz] All questions in repository cleared: ${success}`);
         if (callback) callback(success);
       });
 

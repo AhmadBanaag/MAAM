@@ -32,9 +32,10 @@ export default function AdminQuestionsPage() {
     fetchQuestions,
     saveQuestionAction,
     deleteQuestionAction,
+    clearQuestionsAction,
     activateSurpriseQuiz,
     reorderQuestionsAction,
-  } = useSocket("admin", "AdminQuestionsView");
+  } = useSocket("admin", "Admin");
 
   const activeSessionId = lobbyData?.session.id || currentSession?.id;
 
@@ -140,7 +141,7 @@ export default function AdminQuestionsPage() {
 
     saveQuestionAction({
       id: editingQuestion?.id || undefined,
-      sessionId: activeSessionId,
+      sessionId: undefined,
       questionText: formText.trim(),
       options: {
         A: optionA.trim(),
@@ -166,6 +167,24 @@ export default function AdminQuestionsPage() {
     }
     if (confirm("Are you sure you want to delete this question?")) {
       deleteQuestionAction(id);
+    }
+  };
+
+  const handleClearAll = () => {
+    if (activeQuiz) {
+      alert("Cannot clear questions while a quiz question is actively in progress!");
+      return;
+    }
+    if (questions.length === 0) {
+      alert("The question bank is already empty.");
+      return;
+    }
+    if (confirm(`Are you sure you want to delete ALL ${questions.length} questions in the question bank? This will start completely fresh for your presentation.`)) {
+      clearQuestionsAction((success) => {
+        if (!success) {
+          alert("Failed to clear question bank.");
+        }
+      });
     }
   };
 
@@ -209,14 +228,28 @@ export default function AdminQuestionsPage() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={openAddModal}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-500/20 transition active:scale-95 self-start md:self-auto"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Add New Question</span>
-        </button>
+        <div className="flex items-center gap-2.5 self-start md:self-auto">
+          {questions.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClearAll}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-red-950/50 hover:bg-red-900/60 border border-red-800/40 text-red-300 hover:text-white font-semibold text-xs transition active:scale-95"
+              title="Clear all questions to start fresh"
+            >
+              <Trash2 className="h-4 w-4 text-red-400" />
+              <span>Clear Question Bank</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={openAddModal}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-500/20 transition active:scale-95"
+          >
+            <Plus className="h-4 w-4" />
+            <span>Add New Question</span>
+          </button>
+        </div>
       </div>
 
       {/* Search and Category Filter Bar */}
